@@ -23,6 +23,13 @@ class EvidenceBlock:
     primary_entities: list[tuple[str, str]]    # (FullyQualified.Class, responsibility)
     inbound_callers: list[str]
     excluded_classes: list[tuple[str, str]]    # (FullyQualified.Class, reason)
+    java_sources: list[str] = field(default_factory=list)
+    config_sources: list[str] = field(default_factory=list)
+    mybatis_sources: list[str] = field(default_factory=list)
+    sql_sources: list[str] = field(default_factory=list)
+    batch_sources: list[str] = field(default_factory=list)
+    script_sources: list[str] = field(default_factory=list)
+    outbound_dependencies: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -33,10 +40,19 @@ class ValidationResult:
 
 
 @dataclass
-class CrossDomainLink:
-    caller: str
-    called: str
+class CrossFeatureDependency:
+    dependent: str
+    provider: str
+    evidence: str
     both_sides_present: bool
+
+
+@dataclass
+class ReviewQueueItem:
+    domain_id: str
+    confidence: str
+    review_required: bool
+    reason: str
 
 
 @dataclass
@@ -48,7 +64,8 @@ class AuditLog:
     evidence: list[EvidenceBlock] = field(default_factory=list)
     plan_revisions: list[str] = field(default_factory=list)   # plain-text strings
     validation_results: list[ValidationResult] = field(default_factory=list)
-    cross_domain_links: list[CrossDomainLink] = field(default_factory=list)
+    review_queue: list[ReviewQueueItem] = field(default_factory=list)
+    cross_feature_dependencies: list[CrossFeatureDependency] = field(default_factory=list)
     generated_at: str = ""
 
     def __post_init__(self) -> None:
@@ -62,6 +79,16 @@ def _evidence(e: EvidenceBlock) -> str:
     out += ["", "Primary packages:"] + [f"- {p}" for p in e.primary_packages]
     out += ["", "Primary entities + responsibilities:"]
     out += [f"- {cls} — {resp}" for cls, resp in e.primary_entities]
+    out += ["", "Business evidence sources:"]
+    out += ["- Java:"] + [f"  - {src}" for src in e.java_sources] if e.java_sources else ["- Java: (none observed)"]
+    out += ["- Config/properties:"] + [f"  - {src}" for src in e.config_sources] if e.config_sources else ["- Config/properties: (none observed)"]
+    out += ["- MyBatis mapper XML:"] + [f"  - {src}" for src in e.mybatis_sources] if e.mybatis_sources else ["- MyBatis mapper XML: (none observed)"]
+    out += ["- SQL/migrations:"] + [f"  - {src}" for src in e.sql_sources] if e.sql_sources else ["- SQL/migrations: (none observed)"]
+    out += ["- Spring Batch:"] + [f"  - {src}" for src in e.batch_sources] if e.batch_sources else ["- Spring Batch: (none observed)"]
+    out += ["- Scripts/jobs:"] + [f"  - {src}" for src in e.script_sources] if e.script_sources else ["- Scripts/jobs: (none observed)"]
+    out += ["", "Outbound dependencies:"]
+    out += [f"- {domain} — {reason}" for domain, reason in e.outbound_dependencies] \
+        if e.outbound_dependencies else ["- (none observed)"]
     out += ["", "Inbound callers:"]
     out += [f"- {c}" for c in e.inbound_callers] if e.inbound_callers else ["- (none)"]
     out += ["", "Excluded classes:"]
@@ -96,15 +123,25 @@ def format_audit_log(log: AuditLog) -> str:
     else:
         lines.append("(no results recorded)")
 
-    lines += ["", "## Cross-domain links", ""]
-    if log.cross_domain_links:
-        lines += ["| Caller | Called | Both sides? |",
-                  "|--------|--------|-------------|"]
-        for lnk in log.cross_domain_links:
-            both = "yes" if lnk.both_sides_present else "NO — fix needed"
-            lines.append(f"| {lnk.caller} | {lnk.called} | {both} |")
+    lines += ["", "## Review queue", ""]
+    if log.review_queue:
+        lines += ["| Domain | Confidence | Review required | Reason |",
+                  "|--------|------------|-----------------|--------|"]
+        for item in log.review_queue:
+            review = "true" if item.review_required else "false"
+            lines.append(f"| {item.domain_id} | {item.confidence} | {review} | {item.reason} |")
     else:
-        lines.append("(no cross-domain links found)")
+        lines.append("(no review-required skills)")
+
+    lines += ["", "## Cross-feature dependencies", ""]
+    if log.cross_feature_dependencies:
+        lines += ["| Dependent feature | Provider feature | Evidence | Both sides? |",
+                  "|-------------------|------------------|----------|-------------|"]
+        for lnk in log.cross_feature_dependencies:
+            both = "yes" if lnk.both_sides_present else "NO — fix needed"
+            lines.append(f"| {lnk.dependent} | {lnk.provider} | {lnk.evidence} | {both} |")
+    else:
+        lines.append("(no cross-feature dependencies found)")
 
     lines.append("")
     return "\n".join(lines)

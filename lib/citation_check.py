@@ -2,9 +2,9 @@
 lib/citation_check.py — Citation presence check for SKILL.md files.
 
 Architectural boundary: verifies that citation-required sections contain at
-least one ClassName.methodName() or ClassName reference. Does NOT verify that
-the cited class exists in the target codebase — that is a semantic check for
-the skill-validator agent.
+least one class-qualified citation such as ClassName.methodName() or
+com.example.ClassName. Does NOT verify that the cited class exists in the target
+codebase — that is a semantic check for the skill-validator agent.
 
 Citation-required sections: "## Key Classes and Responsibilities", "## Data Flow"
 Optional sections: Overview, Configuration, Integration Points, Update Expectations
@@ -17,7 +17,8 @@ import re
 import sys
 from pathlib import Path
 
-CITATION_RE = re.compile(r'\b[A-Z][A-Za-z0-9]+(?:\.[A-Z][A-Za-z0-9]+)*(?:\.[a-z][A-Za-z0-9]*\(\))?')
+METHOD_CITATION_RE = re.compile(r'\b[A-Z][A-Za-z0-9_]*\.[a-z][A-Za-z0-9_]*\(\)')
+FQCN_CITATION_RE = re.compile(r'\b[a-z][A-Za-z0-9_]*(?:\.[a-z][A-Za-z0-9_]*)+\.[A-Z][A-Za-z0-9_]*\b')
 
 CITATION_REQUIRED = [
     "## Key Classes and Responsibilities",
@@ -41,15 +42,19 @@ def _section(body: str, heading: str) -> str:
     return body[start:] if nxt == -1 else body[start:nxt]
 
 
+def _has_citation(text: str) -> bool:
+    return bool(METHOD_CITATION_RE.search(text) or FQCN_CITATION_RE.search(text))
+
+
 def check_citations(path: Path) -> list[str]:
     body = _body(path.read_text(encoding="utf-8"))
     errors: list[str] = []
     for heading in CITATION_REQUIRED:
         text = _section(body, heading)
-        if text.strip() and not CITATION_RE.search(text):
+        if text.strip() and not _has_citation(text):
             errors.append(
-                f"Section '{heading}' has no ClassName.methodName() citations. "
-                "Every factual class claim must cite the class name."
+                f"Section '{heading}' has no class-qualified citations. "
+                "Use ClassName.methodName() or a fully qualified class name."
             )
     return errors
 

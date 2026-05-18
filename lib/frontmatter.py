@@ -26,6 +26,8 @@ class ParseResult:
 def parse(text: str) -> ParseResult:
     """Parse SKILL.md text. Never raises — errors go into ParseResult.errors."""
     lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return ParseResult({}, text, ["File does not start with '---'"])
     fences = [i for i, l in enumerate(lines) if l.strip() == "---"]
     if len(fences) < 2:
         return ParseResult({}, text, ["Could not find two '---' delimiters"])
