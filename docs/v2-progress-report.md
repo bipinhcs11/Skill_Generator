@@ -1,6 +1,6 @@
 # Skill Generator v2 — Progress Report
 
-Date: 2026-05-17
+Date: 2026-05-18
 Branch: feat/v2-foundation
 Session: Milestone 0 + Milestone 1 foundation pass
 
@@ -43,31 +43,40 @@ Session: Milestone 0 + Milestone 1 foundation pass
   - Cross-contamination prevention rules
   - Silent plausible wrongness explicitly defended against
 
-- `lib/validate.py` — structural enforcement (151 LOC)
+- `lib/validate.py` — structural enforcement (172 LOC)
   - Frontmatter field presence and type checking
+  - Confidence/review-required metadata checks
+  - Optional dependency-list shape checks
   - Section-order validation
   - PLACEHOLDER, "none found", java fence detection
 
-- `lib/citation_check.py` — citation presence (76 LOC)
+- `lib/citation_check.py` — citation presence (81 LOC)
   - Checks `## Key Classes and Responsibilities` and `## Data Flow`
   - Does NOT check that cited classes exist (that is skill-validator's job)
 
-- `lib/frontmatter.py` — parse/serialize (92 LOC)
+- `lib/frontmatter.py` — parse/serialize (94 LOC)
   - Handles edge cases without PyYAML (stdlib-only)
   - `bump_version()` for skill-updater use
 
-- `lib/audit_log.py` — evidence artifact formatter (110 LOC)
+- `lib/audit_log.py` — evidence artifact formatter (147 LOC)
   - Stable, diff-friendly Markdown output
-  - All data structures for evidence blocks, validation results, cross-domain links
+  - All data structures for evidence blocks, validation results, review queues,
+    and cross-feature dependencies
 
-- **Total lib/ LOC: 429** (target ~300, hard cap 500 — within spec)
+- **Total lib/ LOC: 494** (target ~300, hard cap 500 — within spec, little headroom)
 
 - `skills/skill-validator/SKILL.md` — artifact-3 contract enforcement
-  - 5-step deterministic checklist
+  - 6-step deterministic/semantic checklist
   - Self-correction rules (two allowed types, two-attempt limit)
   - Verdict format (PASS, PASS_WITH_SELF_CORRECTIONS, NEEDS_REVIEW, BLOCKING_ISSUES)
   - Multi-file validation summary format
   - When-to-run table
+
+- `skills/skill-updater/SKILL.md` — Phase 2 update contract
+  - Maps Java/properties/MyBatis XML/SQL/Spring Batch/script diffs to affected feature skills
+  - Propagates updates through `depends_on` / `depended_on_by`
+  - Maintains dependency metadata and Integration Points on both sides
+  - Writes `.github/skills/.skill-update-audit.md`
 
 - `README.md` — v2 root documentation
 - `CLAUDE.md` — Claude Code project rules for this repo
@@ -75,7 +84,7 @@ Session: Milestone 0 + Milestone 1 foundation pass
 
 **Not yet started (later milestones):**
 
-- `skills/skill-updater/SKILL.md` (Milestone 5 in proposal — 2-3 days)
+- Production-hardening `skills/skill-updater/SKILL.md` with real-repo tests
 - `AGENT.md` / `AGENTS.md` (Milestone 6)
 - Petclinic re-test (Milestone 3 — requires running the full skill-generator
   skill against petclinic and comparing to v1 output at `~/Documents/petclinic-skill-test/`)
@@ -87,34 +96,48 @@ Session: Milestone 0 + Milestone 1 foundation pass
 
 ## Architectural decisions made this session
 
-### Decision 1: lib/ is 429 LOC, not ~300
+### Decision 1: lib/ is 494 LOC, not ~300
 
-Target was ~300, hard cap 500. We landed at 429. The extra LOC is in:
-- `audit_log.py` (110 LOC): the data classes and table formatters are genuinely
-  needed for stable diffs. Could be trimmed by removing the `CrossDomainLink`
-  and `ValidationResult` dataclasses and using plain dicts — but the type safety
-  is worth 20 LOC.
-- `frontmatter.py` (92 LOC): the edge-case handling (nested lists, bare keys,
+Target was ~300, hard cap 500. We landed at 494. The extra LOC is in:
+- `audit_log.py` (147 LOC): the data classes and table formatters are genuinely
+  needed for stable evidence, review-queue, and dependency diffs. Could be
+  trimmed by using plain dicts, but the type safety is worth the LOC.
+- `frontmatter.py` (94 LOC): the edge-case handling (nested lists, bare keys,
   quoted values) is why this exists as a separate file.
 
-**Verdict:** 429 LOC is fine. The hard cap is 500 for a reason; 429 gives
-headroom for the next real-repo test to surface edge cases.
+**Verdict:** 494 LOC is still inside the hard cap, but leaves almost no headroom.
+For now `audit_log.py` counts inside the 500 LOC budget. If the next enterprise
+repo test needs more deterministic support, raise the cap through a
+design-history decision rather than quietly growing `lib/`.
 
-### Decision 2: skill-validator is agent-only (no new lib file)
+### Decision 2: LOW confidence generates a review-required draft
+
+LOW confidence is now a developer review signal, not an automatic generation
+block. Generated skills carry `confidence` and `review_required`; LOW confidence
+must set `review_required: true`. This matches the enterprise goal: generate as
+much useful feature context as possible, while giving leads a clear review queue.
+
+### Decision 3: Dependencies are first-class metadata
+
+Feature dependencies now live in `depends_on` and `depended_on_by`, with prose in
+`## Integration Points`. The updater uses this graph to propagate changes across
+feature boundaries, such as participant changes that affect invoice comparison.
+
+### Decision 4: skill-validator is agent-only (no new lib file)
 
 The validator is a SKILL.md, not a Python file. Considered adding a
 `lib/contract_check.py` to automate the package/class existence checks, but
 this crosses the architectural boundary: it would be a crawler in lib/. The
 agent runs `find` and `grep` with its own tools. The lib boundary holds.
 
-### Decision 3: self-correction limited to two types, two attempts
+### Decision 5: self-correction limited to two types, two attempts
 
 The original proposal said "agent self-corrects on failure." Without explicit
 limits, self-correction loops can obscure underlying problems. Two types, two
 attempts per file is the explicit operating contract. Surfacing to the developer
 after two attempts is the right default.
 
-### Decision 4: docs/agent-invocation-flow.md not updated yet
+### Decision 6: docs/agent-invocation-flow.md not updated yet
 
 The v1 diagram does not show the evidence phase. Updating it requires Mermaid
 editing and is a half-day task worth its own commit. Deferred to the next
@@ -128,7 +151,7 @@ session to keep this session's scope clean.
 |---|---|---|
 | Silent plausible wrongness on the first real-repo run | High | Evidence phase + halt gates designed for this; petclinic re-test is the first gate |
 | lib/frontmatter.py edge cases not covered | Medium | The most critical edge cases are handled; real-repo test will surface others |
-| skill-updater is the hardest milestone | High | Not started; change-impact analysis, stale-skill detection, and semantic-diff interpretation are genuinely harder than first-gen. Budgeted 2-3 days. |
+| skill-updater is the hardest milestone | High | Initial contract exists; still needs real-repo diff testing for change-impact analysis, stale-skill detection, and dependency propagation. |
 | Context-window scaling on large repos | Medium | v2 targets ≤300 classes; acknowledged as milestone-8 question |
 | docs/agent-invocation-flow.md is stale | Low | V1 diagram; needs evidence phase added; deferred to next session |
 | No test suite yet | Medium | Python unit tests for lib/ should be written after milestone 3 so the petclinic test defines what to cover |
@@ -163,10 +186,9 @@ In priority order for the next session:
 1. **Commit the current foundation** on `feat/v2-foundation`.
    Suggested commit sequence (below).
 
-2. **Run `lib/validate.py` and `lib/citation_check.py` on the three reference skills**
-   (file-delivery, invoice-compare, payment-method-determination) to verify the
-   checks are calibrated correctly. These are known-good skills from v1 and
-   should pass.
+2. **Create or migrate one artifact-3 fixture skill and run `lib/validate.py` +
+   `lib/citation_check.py` against it.** The three preserved reference skills are
+   v1 schema examples; migrate them before using them as v2 validator fixtures.
 
 3. **Update `docs/agent-invocation-flow.md`** to add the evidence phase to the
    Mermaid diagram. One focused commit.
@@ -194,6 +216,7 @@ lib/frontmatter.py
 lib/audit_log.py
 skills/skill-generator/SKILL.md
 skills/skill-validator/SKILL.md
+skills/skill-updater/SKILL.md
 ```
 
 **Copied from legacy/FeatureBased_Skill_Generator_Agent/ (unchanged):**
@@ -235,7 +258,7 @@ initialize git repo on feat/v2-foundation branch.
 ```
 
 ```
-feat: lib — deterministic structural spine (429 LOC, within 500 cap)
+feat: lib — deterministic structural spine (494 LOC, within 500 cap)
 
 Add validate.py, citation_check.py, frontmatter.py, audit_log.py.
 Architectural boundary: structural enforcement only; no semantic analysis.
@@ -252,8 +275,15 @@ link pass, audit log, grouping examples, cross-contamination prevention.
 ```
 feat: skills/skill-validator — artifact-3 contract enforcement
 
-Add SKILL.md covering: 5-step deterministic checklist, self-correction
+Add SKILL.md covering: 6-step deterministic checklist, self-correction
 rules (2 types, 2 attempts), verdict format, multi-file summary.
+```
+
+```
+feat: skills/skill-updater — dependency-aware update workflow
+
+Add SKILL.md covering: diff intake, impact analysis, dependency propagation,
+review gates, validation, and update audit logging.
 ```
 
 ```
@@ -266,7 +296,7 @@ docs: add README, CLAUDE.md, v2-progress-report
 
 - No CI integration
 - No production hardening
-- No skill-updater (deferred)
+- No production-hardened skill-updater real-repo test yet
 - No petclinic re-test (next session priority)
 - No GitHub repo or push
 - No merge to main

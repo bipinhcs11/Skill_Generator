@@ -18,10 +18,19 @@ current state and next actions.
 3. Type: *"Analyze this project and generate the feature skills"*
 4. Agent walks the repo and emits **structured evidence per candidate domain**
 5. Review the evidence. Type your approval or request changes.
-6. Agent generates one SKILL.md per domain, self-validates, runs the link pass
+6. Agent generates one SKILL.md per domain, self-validates, runs the dependency pass
 7. Agent shows you the summary. Type "yes" to commit.
 
 Five typed messages. No CLI to install. No Python dependencies for the agent workflow.
+
+Set this once in any shell or IDE terminal where the agent will run validation:
+
+```bash
+export SKILL_GENERATOR_HOME=/path/to/Skill_Generator
+```
+
+The generator and updater call `$SKILL_GENERATOR_HOME/lib/validate.py` and
+`$SKILL_GENERATOR_HOME/lib/citation_check.py` from inside the target Java repo.
 
 ---
 
@@ -32,13 +41,13 @@ Skill_Generator/
 ├── skills/
 │   ├── skill-generator/SKILL.md    ← The agent contract (start here)
 │   ├── skill-validator/SKILL.md    ← Post-generation semantic review
-│   ├── skill-updater/SKILL.md      ← Phase 2: in-place updates (planned)
+│   ├── skill-updater/SKILL.md      ← Phase 2: in-place updates from git diffs
 │   ├── file-delivery/SKILL.md      ← Reference skill
 │   ├── invoice-compare/SKILL.md    ← Reference skill
 │   └── payment-method-determination/SKILL.md  ← Reference skill
-├── lib/                            ← Deterministic structural spine (~429 LOC)
+├── lib/                            ← Deterministic structural spine (~494 LOC)
 │   ├── validate.py                 ← Frontmatter + section order + format checks
-│   ├── citation_check.py           ← ClassName.methodName() citation presence
+│   ├── citation_check.py           ← ClassName.methodName() / FQCN citation presence
 │   ├── frontmatter.py              ← Parse/serialize YAML frontmatter
 │   └── audit_log.py                ← Format evidence-phase audit artifacts
 ├── examples/                       ← Reference Java examples
@@ -56,8 +65,11 @@ Semantic understanding goes to the AI. Structural enforcement stays in `lib/`
 — but only because deterministic code is genuinely better at
 "does this frontmatter parse" than the agent is.
 
-The `lib/` files have a 500 LOC combined hard cap. If you need to add a sixth
-file to `lib/`, it requires a decision record. The boundary is:
+The `lib/` files have a 500 LOC combined hard cap for structural enforcement.
+`audit_log.py` counts inside that cap for now, so there is intentionally little
+headroom left. If the next enterprise test needs more deterministic support,
+raise the cap with a design-history decision instead of quietly growing `lib/`.
+The boundary is:
 
 - **In `lib/`:** frontmatter parsing, section-order validation, citation regex,
   audit-log formatting
@@ -73,11 +85,21 @@ A pure-agent system fails *beautifully* — coherent but wrong, persuasive but
 incomplete. Three layers defend against this:
 
 1. **Evidence phase** — the agent produces auditable structured reasoning per
-   candidate domain before the human approves the plan
-2. **Halt gates** — human reviews evidence + plan, and reviews output before commit
-3. **Deterministic spine** — structural errors caught before output reaches the human
+   candidate domain before generation
+2. **Confidence metadata** — every generated skill carries `confidence` and
+   `review_required`, so LOW-confidence skills become reviewable drafts rather
+   than hidden uncertainty
+3. **Dependency graph** — generated skills maintain `depends_on` and
+   `depended_on_by`, so updates propagate across feature boundaries
+4. **Halt gates** — human reviews evidence + plan, and reviews output before commit
+5. **Deterministic spine** — structural errors caught before output reaches the human
 
 See `skills/skill-generator/SKILL.md` for the complete agent contract.
+
+For later code changes, use `skills/skill-updater/SKILL.md`. It maps git diffs
+across Java, properties/YAML, MyBatis mapper XML, SQL/migrations, Spring Batch,
+and scripts to affected feature skills, propagates through dependencies, bumps
+versions, and records `.github/skills/.skill-update-audit.md`.
 
 ---
 
