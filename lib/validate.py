@@ -2,14 +2,14 @@
 lib/validate.py — Structural enforcement for generated SKILL.md files.
 
 Architectural boundary: checks structure, not semantics. Does not understand
-domains, infer responsibilities, or judge content quality.
+features, infer responsibilities, or judge content quality.
 
 Checks: required frontmatter fields, integer version >= 1, quoted ISO-8601
 last_updated, confidence/review metadata, non-empty list fields, required
 sections in order, no PLACEHOLDER text, no 'none found' text, no ```java code
 fences.
 
-Does NOT check: domain correctness, citation accuracy, semantic completeness.
+Does NOT check: feature correctness, citation accuracy, semantic completeness.
 
 Usage: python3 lib/validate.py path/to/SKILL.md
 Exit 0 = pass. Exit 1 = failures printed to stdout.
