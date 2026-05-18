@@ -18,7 +18,7 @@ This skill runs a semantic review pass on one or more generated SKILL.md files.
 It complements the deterministic spine in `lib/validate.py` and
 `lib/citation_check.py`. Where the deterministic spine catches structural
 errors (wrong format, missing fields, invalid confidence metadata, no
-citations), this skill catches semantic errors (wrong domain boundary,
+citations), this skill catches semantic errors (wrong feature boundary,
 incomplete integration points, dependency gaps, claims that cannot be verified
 against the source code).
 
@@ -41,7 +41,7 @@ files.
 **Does not:**
 - Rewrite SKILL.md files without developer approval except for the two allowed self-corrections below
 - Replace the deterministic spine checks; it invokes `lib/validate.py` and `lib/citation_check.py` first
-- Judge whether domain grouping decisions were optimal — that is a planning question,
+- Judge whether feature grouping decisions were optimal — that is a planning question,
   not a validation question
 - Flag style preferences (word choice, sentence length, heading phrasing)
 
@@ -68,8 +68,8 @@ The contract requires:
 | `## Overview` | 2-4 sentences, no placeholder text |
 | `## Key Classes and Responsibilities` | Every class in `key_classes` frontmatter appears here; no class is listed here that is absent from frontmatter |
 | `## Data Flow` | At least one class-qualified citation: `ClassName.methodName()` or fully qualified class name |
-| `## Configuration` | Either real config keys/env vars OR the exact fallback: "No runtime configuration for this domain." |
-| `## Integration Points` | Agrees with `depends_on` and `depended_on_by`; either real integration points OR the exact fallback: "This domain has no integration points with other features." |
+| `## Configuration` | Either real config keys/env vars OR the exact fallback: "No runtime configuration for this feature." |
+| `## Integration Points` | Agrees with `depends_on` and `depended_on_by`; either real integration points OR the exact fallback: "This feature has no integration points with other features." |
 | Optional `## Error Handling` | If present, exception/status claims must be source-backed |
 | Optional `## Business Rules and Edge Cases` | If present, rules must tie back to Java, config, MyBatis XML, SQL, Spring Batch, or scripts |
 | Optional `## AI Agent Instructions` | If present, instructions must be feature-specific and source-backed |
@@ -85,8 +85,8 @@ if earlier steps surface no issues.
 ### Check 1 — Run the deterministic spine
 
 ```bash
-python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<domain-id>/SKILL.md
-python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<feature-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<feature-id>/SKILL.md
 ```
 
 If either fails: do not proceed to Check 2. Fix the structural issue, verify
@@ -121,12 +121,12 @@ Flag as a **consistency issue** if:
 - The responsibility claim describes what a different class does
 - The class has a clearly different primary concern than stated
 - The class is a test class, infrastructure bootstrap, or utility that was
-  incorrectly included as a domain entity
+  incorrectly included as a feature entity
 
 ### Check 4 — Integration point and dependency bidirectionality
 
 For each integration point named in `## Integration Points`, find the other
-domain's SKILL.md and verify the current domain is named there. Also verify the
+feature's SKILL.md and verify the current feature is named there. Also verify the
 frontmatter graph agrees:
 
 - If current skill `depends_on: other-skill`, then `other-skill` must list the
@@ -136,7 +136,7 @@ frontmatter graph agrees:
 - The prose in both `## Integration Points` sections must explain the direction
   and source-backed reason for the dependency.
 
-If the other domain's SKILL.md does not mention the current domain:
+If the other feature's SKILL.md does not mention the current feature:
 record as a **link gap** issue. This can be self-corrected (add missing
 dependency metadata or prose to the other SKILL.md) without developer approval —
 but record the self-correction in the verdict.
@@ -177,7 +177,7 @@ The validator may self-correct exactly two types of issues without developer
 approval:
 
 1. **Link gaps** (Check 4): add missing `depends_on` / `depended_on_by` metadata
-   and the matching Integration Points prose to the other domain's SKILL.md.
+   and the matching Integration Points prose to the other feature's SKILL.md.
    Record the addition in the verdict.
 
 2. **Stale last_updated date**: update `last_updated` in the frontmatter to
@@ -198,7 +198,7 @@ After completing all checks, produce a verdict for each SKILL.md using this
 exact format:
 
 ```
-## Verdict: <domain-id>
+## Verdict: <feature-id>
 
 Status: PASS | PASS_WITH_SELF_CORRECTIONS | NEEDS_REVIEW | BLOCKING_ISSUES
 
@@ -234,7 +234,7 @@ no issues were found and no self-corrections were needed.
 
 To validate an entire `.github/skills/` directory, run the skill once with the
 directory path. The skill validates each SKILL.md in alphabetical order and
-produces one verdict per domain.
+produces one verdict per feature.
 
 After all individual verdicts, produce a summary:
 
@@ -248,7 +248,7 @@ NEEDS_REVIEW: X
 BLOCKING_ISSUES: X
 
 Cross-file issues:
-- <any issues that span multiple domains, e.g. link gaps>
+- <any issues that span multiple features, e.g. link gaps>
 ```
 
 ---

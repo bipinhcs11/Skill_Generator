@@ -22,7 +22,9 @@ affected feature skills, propagates impact through skill dependencies, updates
 only the needed sections, and records what changed in an audit trail.
 
 Use this after the first-run `skill-generator` has already committed
-`.github/skills/<feature-id>/SKILL.md` files.
+`.github/skills/<feature-id>/SKILL.md` files. If `skill-tracker` produced an
+impact report, use it as the starting plan, then re-check source evidence before
+editing.
 
 ---
 
@@ -64,12 +66,16 @@ Before updating anything, confirm:
 2. **Existing skills.** `.github/skills/` contains one or more generated
    `SKILL.md` files. If not, stop and run `skill-generator` first.
 
-3. **Diff base.** Determine what to compare:
+3. **Tracker report.** If the developer provides a `skill-tracker` report,
+   read it first. Treat it as the approved starting scope, but verify evidence
+   before editing any SKILL.md file.
+
+4. **Diff base.** Determine what to compare:
    - If the developer provides a base branch or commit, use that.
    - Otherwise use `git merge-base HEAD origin/main` when available.
    - If no base is clear, ask the developer for the base commit or branch.
 
-4. **Generator tools path.** Locate the Skill_Generator checkout and set
+5. **Generator tools path.** Locate the Skill_Generator checkout and set
    `SKILL_GENERATOR_HOME` so validation can run from the target repo.
 
 ---
@@ -258,8 +264,8 @@ Run validation on every edited skill and every dependency counterpart edited by
 Step 5.
 
 ```bash
-python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<domain-id>/SKILL.md
-python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<feature-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<feature-id>/SKILL.md
 ```
 
 On failure:
