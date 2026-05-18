@@ -6,6 +6,22 @@ Session: Milestone 0 + Milestone 1 foundation pass
 
 ---
 
+## Current status addendum
+
+After the follow-up docs and flow refinement, the branch now includes:
+
+- `skills/skill-tracker/SKILL.md` as the read-only PR/change impact detector.
+- Updated README agent-role guidance: generator, tracker, updater, validator.
+- Updated invocation flow diagrams showing tracker before updater.
+- Updated enterprise rollout guidance and release checklist for the tracker/updater split.
+- Added `docs/templates/copilot-instructions.md` for target repos that use GitHub Copilot.
+- GitHub repo established at `https://github.com/bipinhcs11/Skill_Generator`; `main` and `feat/v2-foundation` currently carry the v2 foundation commits.
+
+Historical workspace notes below describe how the v2 repo was originally carved
+out. They are kept for traceability, not as current onboarding instructions.
+
+---
+
 ## What was completed this session
 
 ### Milestone 0 — Workspace reorganization (complete)
