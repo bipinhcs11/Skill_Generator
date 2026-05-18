@@ -1,7 +1,7 @@
 ---
 skill_id: skill-validator
-version: 1
-last_updated: "2026-05-17"
+version: 2
+last_updated: "2026-05-18"
 feature_name: "Validate generated SKILL.md files"
 primary_packages:
   - lib
@@ -17,9 +17,10 @@ key_classes:
 This skill runs a semantic review pass on one or more generated SKILL.md files.
 It complements the deterministic spine in `lib/validate.py` and
 `lib/citation_check.py`. Where the deterministic spine catches structural
-errors (wrong format, missing fields, no citations), this skill catches
-semantic errors (wrong domain boundary, incomplete integration points, claims
-that cannot be verified against the source code).
+errors (wrong format, missing fields, invalid confidence metadata, no
+citations), this skill catches semantic errors (wrong domain boundary,
+incomplete integration points, dependency gaps, claims that cannot be verified
+against the source code).
 
 Run this skill after `skill-generator` has committed the initial skill files,
 or at any point where you want a structured second opinion on a set of SKILL.md
@@ -38,8 +39,8 @@ files.
 - Self-correct on first failure before surfacing to the developer
 
 **Does not:**
-- Rewrite SKILL.md files without developer approval
-- Run the deterministic spine checks (call `lib/validate.py` separately for those)
+- Rewrite SKILL.md files without developer approval except for the two allowed self-corrections below
+- Replace the deterministic spine checks; it invokes `lib/validate.py` and `lib/citation_check.py` first
 - Judge whether domain grouping decisions were optimal — that is a planning question,
   not a validation question
 - Flag style preferences (word choice, sentence length, heading phrasing)
@@ -58,13 +59,20 @@ The contract requires:
 | `skill_id` frontmatter | Matches the directory name exactly (kebab-case) |
 | `version` frontmatter | Integer >= 1 |
 | `last_updated` frontmatter | ISO-8601 date (YYYY-MM-DD) matching the commit date |
+| `confidence` frontmatter | HIGH, MEDIUM, or LOW; copied from the evidence phase |
+| `review_required` frontmatter | true or false; must be true when confidence is LOW |
 | `primary_packages` frontmatter | Every package listed exists in the repo's source tree |
 | `key_classes` frontmatter | Every class listed exists as a `.java` file in the repo |
+| `depends_on` frontmatter | Optional non-empty list of provider feature ids this skill depends on |
+| `depended_on_by` frontmatter | Optional non-empty list of dependent feature ids that rely on this skill |
 | `## Overview` | 2-4 sentences, no placeholder text |
 | `## Key Classes and Responsibilities` | Every class in `key_classes` frontmatter appears here; no class is listed here that is absent from frontmatter |
-| `## Data Flow` | At least one `ClassName.methodName()` citation |
+| `## Data Flow` | At least one class-qualified citation: `ClassName.methodName()` or fully qualified class name |
 | `## Configuration` | Either real config keys/env vars OR the exact fallback: "No runtime configuration for this domain." |
-| `## Integration Points` | Either real integration points OR the exact fallback: "This domain has no integration points with other features." |
+| `## Integration Points` | Agrees with `depends_on` and `depended_on_by`; either real integration points OR the exact fallback: "This domain has no integration points with other features." |
+| Optional `## Error Handling` | If present, exception/status claims must be source-backed |
+| Optional `## Business Rules and Edge Cases` | If present, rules must tie back to Java, config, MyBatis XML, SQL, Spring Batch, or scripts |
+| Optional `## AI Agent Instructions` | If present, instructions must be feature-specific and source-backed |
 | `## Update Expectations` | At least two specific triggers for updating this SKILL.md |
 
 ---
@@ -77,8 +85,8 @@ if earlier steps surface no issues.
 ### Check 1 — Run the deterministic spine
 
 ```bash
-python3 lib/validate.py .github/skills/<domain-id>/SKILL.md
-python3 lib/citation_check.py .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<domain-id>/SKILL.md
 ```
 
 If either fails: do not proceed to Check 2. Fix the structural issue, verify
@@ -92,10 +100,12 @@ For every package in `primary_packages` frontmatter:
 find . -type d -path "*/<package-as-path>" | grep -v "target\|build"
 ```
 
-For every class in `key_classes` frontmatter:
+For every fully qualified class in `key_classes` frontmatter, convert the package
+to a path and verify the exact class file exists. Do not validate by simple class
+name only; duplicate class names across modules are common.
 
 ```bash
-find . -name "<SimpleClassName>.java" | grep -v "target\|build\|Test"
+find . -path "*/<package-as-path>/<SimpleClassName>.java" | grep -v "target\|build\|Test"
 ```
 
 If a package or class is not found: record it in the verdict as a **blocking**
@@ -113,15 +123,23 @@ Flag as a **consistency issue** if:
 - The class is a test class, infrastructure bootstrap, or utility that was
   incorrectly included as a domain entity
 
-### Check 4 — Integration point bidirectionality
+### Check 4 — Integration point and dependency bidirectionality
 
 For each integration point named in `## Integration Points`, find the other
-domain's SKILL.md and verify the current domain is named there.
+domain's SKILL.md and verify the current domain is named there. Also verify the
+frontmatter graph agrees:
+
+- If current skill `depends_on: other-skill`, then `other-skill` must list the
+  current skill in `depended_on_by`.
+- If current skill `depended_on_by: caller-skill`, then `caller-skill` must list
+  the current skill in `depends_on`.
+- The prose in both `## Integration Points` sections must explain the direction
+  and source-backed reason for the dependency.
 
 If the other domain's SKILL.md does not mention the current domain:
-record as a **link gap** issue. This can be self-corrected (add the link to
-the other SKILL.md) without developer approval — but record the self-correction
-in the verdict.
+record as a **link gap** issue. This can be self-corrected (add missing
+dependency metadata or prose to the other SKILL.md) without developer approval —
+but record the self-correction in the verdict.
 
 ### Check 5 — Configuration existence
 
@@ -135,6 +153,22 @@ grep -r "<key-name>" . --include="application*.yml" --include="application*.prop
 If a configuration key is not found in any config file: record as a
 **configuration gap** issue.
 
+### Check 6 — Business rules, MyBatis, SQL, batch, scripts, and AI instructions
+
+For optional `## Error Handling`, `## Business Rules and Edge Cases`, and
+`## AI Agent Instructions` sections, verify each important claim against the
+source evidence named or implied by the skill:
+
+- Java methods, annotations, exceptions, DTOs, controllers, services, entities
+- properties/YAML keys and values
+- MyBatis mapper XML statements, result maps, dynamic SQL, joins, and stored procedure calls
+- SQL tables, constraints, seed data, indexes, stored procedures, migrations
+- Spring Batch Job/Step/Tasklet/ItemReader/ItemProcessor/ItemWriter definitions, listeners, job parameters, restart behavior, and metadata table usage
+- scripts/jobs that load files, deliver reports, reconcile data, or call feature
+  endpoints
+
+Flag a **consistency issue** when a rule is plausible but not source-backed.
+
 ---
 
 ## Self-correction rules
@@ -142,7 +176,8 @@ If a configuration key is not found in any config file: record as a
 The validator may self-correct exactly two types of issues without developer
 approval:
 
-1. **Link gaps** (Check 4): add the missing link to the other domain's SKILL.md.
+1. **Link gaps** (Check 4): add missing `depends_on` / `depended_on_by` metadata
+   and the matching Integration Points prose to the other domain's SKILL.md.
    Record the addition in the verdict.
 
 2. **Stale last_updated date**: update `last_updated` in the frontmatter to
@@ -172,6 +207,7 @@ Package/class existence: PASS | FAIL
 Responsibility consistency: PASS | ISSUES_FOUND
 Integration bidirectionality: PASS | GAPS_FOUND | SELF_CORRECTED
 Configuration existence: PASS | GAPS_FOUND
+Business/source-backed rules: PASS | ISSUES_FOUND
 
 Issues (if any):
 - [BLOCKING] <issue description>

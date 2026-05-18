@@ -1,7 +1,7 @@
 ---
 skill_id: skill-generator
-version: 2
-last_updated: "2026-05-17"
+version: 3
+last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
   - "generate skill files for this repo"
@@ -15,10 +15,12 @@ artifact_contract: artifact-3
 
 ## Purpose
 
-This skill turns a Java repository into a set of feature-based SKILL.md files,
-one per coherent domain. A developer types one sentence. The agent walks the
-repo, produces auditable evidence per candidate domain, halts for human review,
-then generates and self-validates the skill files.
+This skill turns a Java repository into a complete set of feature-based SKILL.md
+files, one per coherent business capability. A developer types one sentence.
+The agent walks the repo, extracts business knowledge from Java code,
+properties/YAML files, MyBatis mapper XML, SQL/migration files, Spring Batch
+jobs, and operational scripts, then writes reviewable skills with confidence
+metadata and maintained dependencies.
 
 This skill is the heart of the Skill Generator v2 product. Read it completely
 before running it. It is longer than a typical SKILL.md because it contains the
@@ -49,9 +51,10 @@ domain boundaries that are wrong, persuasive summaries that omit a subsystem,
 overconfident architectural reads that the developer won't catch without the
 source in front of them.
 
-Every rule in this skill exists to make that failure mode visible before the
-human approves. Read the halt-gate rules and the evidence-phase template with
-that risk in mind.
+Every rule in this skill exists to make that failure mode visible. LOW
+confidence does not block generation by itself; it marks the generated skill as
+`review_required: true` so leads and developers know exactly where to inspect.
+Read the halt-gate rules and the evidence-phase template with that risk in mind.
 
 ---
 
@@ -61,18 +64,20 @@ that risk in mind.
 Step 1  Trigger + pre-flight
 Step 2  Crawl (agent walks repo with its own tools)
 Step 3  Evidence phase (structured artifact per candidate domain)
-── HALT GATE 1 ── Human reviews evidence + plan, approves/edits/rejects
-Step 4  Generate (one SKILL.md per approved domain)
+── HALT GATE 1 ── Human reviews evidence + plan, may edit grouping
+Step 4  Generate (one SKILL.md per planned domain; LOW confidence = review required)
 Step 5  Self-validate (deterministic spine via lib/)
-Step 6  Link pass (cross-domain dependencies, both sides updated)
+Step 6  Link pass (cross-feature dependencies, metadata + both sides updated)
 ── HALT GATE 2 ── Human reviews .github/skills/, approves commit
 Step 7  Commit
 ```
 
-Steps 3 and 5 are the key additions over v1. Step 3 adds auditability and
-surfaces the agent's confidence before any SKILL.md is written. Step 5 puts
-the deterministic checker inside the agent's inner loop so structural errors
-never reach the human.
+Steps 3, 5, and 6 are the key additions over v1. Step 3 adds auditability and
+surfaces the agent's confidence. Step 5 puts the deterministic checker inside
+the agent's inner loop so structural errors never reach the human. Step 6 makes
+feature dependencies durable, so a later change to participant management can
+propagate to invoice comparison when invoice comparison depends on participant
+data.
 
 ---
 
@@ -130,12 +135,39 @@ Read these, in order:
 
 5. **Entity / domain model classes.** `find . -name "*Entity.java" -o -name "*Model.java" -o -name "*Domain.java" | head -40`.
 
-6. **Key configuration files.** `find . -name "application*.yml" -o -name "application*.properties"`.
-   Read these to understand service names, ports, and external dependencies.
-   Do not index CI workflow YAML, docker-compose, or monitoring config
-   (Grafana, Prometheus) as application domains. These are infrastructure files.
+6. **Key configuration files.** `find . -name "application*.yml" -o -name "application*.yaml" -o -name "application*.properties"`.
+   Read these to understand service names, ports, feature toggles, cache TTLs,
+   external dependencies, queue names, and data-source wiring. Do not index CI
+   workflow YAML, docker-compose, or monitoring config (Grafana, Prometheus) as
+   application domains. These are infrastructure files unless application code
+   directly reads a key from them.
 
-7. **README.md** if present. This often names the domains in plain English
+7. **MyBatis mapper XML and mapper interfaces.** Read `*Mapper.xml`,
+   `*Mapper.java`, `mybatis-config.xml`, and mapper-location properties such as
+   `mybatis.mapper-locations`. Treat `select`, `insert`, `update`, `delete`,
+   `resultMap`, dynamic SQL (`if`, `choose`, `foreach`), joins, stored procedure
+   calls, and parameter/result mappings as business evidence. Always connect a
+   mapper XML statement back to the Java mapper/service method that uses it.
+
+8. **SQL and migration files.** Read Flyway/Liquibase files, schema DDL, seed
+   data, stored procedure scripts, and table/index/constraint definitions.
+   These often contain business rules the Java code relies on: status values,
+   uniqueness, soft-delete flags, audit columns, reference data, and workflow
+   transitions.
+
+9. **Spring Batch applications.** Read `Job`, `Step`, `Tasklet`, `ItemReader`,
+   `ItemProcessor`, `ItemWriter`, `JobLauncher`, `JobParameters`, schedulers,
+   listeners, batch config XML, and batch metadata/table usage. Batch flows are
+   feature behavior, especially when they ingest files, transform records,
+   reconcile invoices, deliver reports, or write outbound files.
+
+10. **Operational scripts and scheduled jobs.** Read scripts under `scripts/`,
+   `bin/`, `jobs/`, `src/main/resources`, and module-local shell/SQL runners
+   when they are referenced by the app or deployment. Treat them as business
+   evidence when they load reference data, reconcile files, deliver reports,
+   trigger batch jobs, or call feature endpoints.
+
+11. **README.md** if present. This often names the domains in plain English
    and is the highest-signal single file in the repo.
 
 ### What to skip
@@ -146,6 +178,8 @@ Do not read, do not index as candidate domains:
 - CI workflow files: `.github/workflows/*.yml`, `Jenkinsfile`, `.circleci/`
 - Docker/container config: `Dockerfile`, `docker-compose.yml`, `kubernetes/`
 - Monitoring config: `*prometheus*.yml`, `*grafana*.json`, `logback*.xml`
+- Generated SQL dumps, vendor binaries, or one-off local scripts unless the
+  application or deployment references them
 - Test-only packages: `src/test/**` (note them, but do not use them to define
   domains — tests follow domains, not the other way around)
 - IDE config: `.idea/`, `.vscode/`, `.classpath`, `.project`
@@ -180,7 +214,8 @@ proposing any grouping or writing any SKILL.md.
 
 The evidence block is the auditable artifact. It tells the human what the agent
 saw, what confidence it has, and where it is uncertain. LOW-confidence domains
-must be flagged explicitly so the human knows where to look hardest.
+must be flagged explicitly so the human knows where to look hardest. LOW
+confidence is a review signal, not an automatic generation stop.
 
 ### Evidence block template (required, one per candidate domain)
 
@@ -198,6 +233,16 @@ Primary packages:
 
 Primary entities + responsibilities:
 - <FullyQualified.ClassName> — <one-line responsibility>
+
+Business evidence sources:
+- Java: <controllers/services/entities/repos read>
+- Config/properties: <keys or files read, or "none observed">
+- MyBatis mapper XML: <mapper XML statements/result maps read, or "none observed">
+- SQL/migrations: <tables, constraints, seed data, or "none observed">
+- Batch/scripts/jobs: <Spring Batch jobs, scripts, schedulers that affect this feature, or "none observed">
+
+Outbound dependencies (features this domain depends on):
+- <domain-id> — <why this feature needs it, or "none observed">
 
 Inbound callers (other modules or domains that call into this domain):
 - <module-id or domain-id>
@@ -217,16 +262,18 @@ Use these definitions consistently. Do not upgrade confidence to reduce concern
 | MEDIUM | Mostly clear, but some classes could plausibly belong to an adjacent domain, or the package structure is slightly inconsistent |
 | LOW | Ambiguous boundary — shared packages, mixed responsibilities, or evidence conflicts with the README description |
 
-LOW-confidence domains automatically surface to the human at Halt Gate 1 with
-this specific message:
+LOW-confidence domains automatically surface to the human at Halt Gate 1 and in
+the generated SKILL.md frontmatter. Use this specific message:
 
 > "DOMAIN `<domain-id>` has LOW confidence because: [reasons from evidence block].
-> Please confirm whether this grouping is correct or override it before I proceed
-> to generation. Options: (a) confirm as-is, (b) merge with another domain,
-> (c) split into two, (d) exclude entirely."
+> I can still generate it as a review-required draft. Options: (a) generate as
+> review-required, (b) merge with another domain, (c) split into two,
+> (d) exclude entirely."
 
-Do not generate a SKILL.md for a LOW-confidence domain until the human has
-explicitly chosen one of the four options above.
+If the developer approves the plan generally without resolving a LOW-confidence
+domain, generate that domain as a draft with `confidence: LOW` and
+`review_required: true`. Do not present LOW-confidence skills as production-ready
+or equally trusted. They belong in the final review queue.
 
 ### What good evidence looks like
 
@@ -277,6 +324,16 @@ Primary entities + responsibilities:
 - org.springframework.samples.petclinic.vets.model.Specialty — value object for vet specialty
 - org.springframework.samples.petclinic.vets.web.VetResource — REST layer for /vets endpoint
 
+Business evidence sources:
+- Java: VetResource, VetRepository, Vet, Specialty
+- Config/properties: vets.cache.ttl and vets.cache.heapSize from VetsProperties
+- MyBatis mapper XML: none observed
+- SQL/migrations: vets and specialties seed/reference tables
+- Batch/scripts/jobs: none observed
+
+Outbound dependencies:
+- infrastructure-services — config server supplies cache settings; discovery server resolves service name
+
 Inbound callers:
 - visits-service (calls /vets/{vetId} for appointment linking)
 - api-gateway (routes /vets/* to this service)
@@ -299,14 +356,16 @@ developer. Do not produce the plan before all evidence blocks are written.
 
 I found N candidate domains based on my crawl. Here is the proposed grouping:
 
-| Domain ID         | Description                        | Confidence | Classes |
-|-------------------|------------------------------------|------------|---------|
-| vets-management   | Vet profiles and specialties       | HIGH       | 6       |
-| visit-scheduling  | Appointment booking and history    | HIGH       | 8       |
-| owner-registration| Pet owner CRUD + pet management    | MEDIUM     | 11      |
+| Domain ID          | Description                     | Confidence | Review required | Classes | Depends on |
+|--------------------|---------------------------------|------------|-----------------|---------|------------|
+| vets-management    | Vet profiles and specialties    | HIGH       | false           | 6       | infrastructure-services |
+| visit-scheduling   | Appointment booking and history | HIGH       | false           | 8       | customers-management |
+| owner-registration | Pet owner CRUD + pet management | MEDIUM     | false           | 11      | infrastructure-services |
+| shared-legacy      | Mixed legacy support classes    | LOW        | true            | 4       | owner-registration |
 
 LOW-confidence domains flagged for review:
-(list any LOW-confidence domains here with the four-option prompt from Step 3)
+(list any LOW-confidence domains here with the four-option prompt from Step 3;
+they may still be generated as `review_required: true` drafts)
 
 Do you approve this plan? Reply with one of:
 - "yes" — proceed to generation
@@ -314,8 +373,10 @@ Do you approve this plan? Reply with one of:
 - "stop" — cancel the run
 ```
 
-Do not proceed to Step 4 until the developer types "yes" or a revision that
-resolves all LOW-confidence flags.
+Do not proceed to Step 4 until the developer types "yes", provides grouping
+changes, or says to generate LOW-confidence domains as review-required drafts.
+If the developer gives broad approval, preserve every LOW-confidence flag as
+`review_required: true` in the generated SKILL.md.
 
 If the developer requests a change (merge two domains, split one, rename), revise
 the evidence artifact and plan before proceeding. The revised plan must be
@@ -337,10 +398,16 @@ skill_id: <domain-id>              # kebab-case, matches directory name
 version: 1
 last_updated: "<ISO-8601 date>"    # YYYY-MM-DD in quotes
 feature_name: "<plain English>"    # What this domain does in 3-5 words
+confidence: HIGH | MEDIUM | LOW
+review_required: true | false      # true for LOW confidence or human-requested review
 primary_packages:
   - <fully.qualified.package>      # At least one; never empty
 key_classes:
   - <FullyQualified.ClassName>     # At least one; never empty
+depends_on:                        # Optional; omit when none
+  - <domain-id-this-feature-calls-or-requires>
+depended_on_by:                    # Optional; omit when none
+  - <domain-id-that-calls-or-requires-this-feature>
 ---
 ```
 
@@ -356,11 +423,23 @@ Then sections in this order:
    `No runtime configuration for this domain.` (Do not leave this section empty
    and do not write "none found".)
 5. `## Integration Points` — Other domains, external APIs, or message queues
-   this domain calls or receives from. If none: write
-   `This domain has no integration points with other features.`
-6. `## Update Expectations` — What kinds of code changes in this domain would
+   this domain calls or receives from. This section must agree with `depends_on`
+   and `depended_on_by` frontmatter. If none: write `This domain has no
+   integration points with other features.`
+6. `## Error Handling` — Optional. Include when the feature has exception
+   mapping, retry behavior, fallback behavior, validation failures, or important
+   HTTP/status outcomes.
+7. `## Business Rules and Edge Cases` — Optional. Include when Java logic,
+   MyBatis mapper XML, SQL constraints, seed data, properties, Spring Batch
+   steps, or scripts reveal non-obvious rules.
+8. `## AI Agent Instructions` — Optional. Include for complex or rule-heavy
+   domains. Use specific operating rules an AI must follow when editing the
+   feature.
+9. `## Update Expectations` — What kinds of code changes in this domain would
    require updating this SKILL.md. Be specific: name the sections that change
-   when entities are added, configuration changes, or new integrations appear.
+   when entities are added, configuration changes, MyBatis mapper XML changes,
+   SQL changes, Spring Batch job/step behavior changes, script/job behavior
+   changes, or new integrations appear.
 
 ### Generation rules (non-negotiable)
 
@@ -390,6 +469,25 @@ Then sections in this order:
 7. **last_updated is today's date** in `YYYY-MM-DD` format, in quotes.
    The deterministic spine checks this field.
 
+8. **Confidence metadata is required.** Copy the confidence from the evidence
+   block. Set `review_required: true` when confidence is LOW or when the human
+   asks for a lead review. MEDIUM confidence may use `review_required: false`
+   unless a concrete ambiguity remains.
+
+9. **Dependencies are first-class.** If this feature needs another feature's API,
+   tables, files, events, DTOs, config, or reference data, add that feature id to
+   `depends_on`. Add the reverse link to the other skill's `depended_on_by`. The
+   Integration Points sections on both sides must describe the direction and the
+   evidence behind it. Example: `invoice-compare` depends on `participant` when
+   invoice comparison reads participant identity, eligibility, account, or
+   enrollment data.
+
+10. **Business knowledge must come from source evidence.** Pull rules from Java
+    methods, validation annotations, properties/YAML, MyBatis mapper XML,
+    SQL constraints/seed data, Spring Batch jobs/steps, and scripts/jobs. If a
+    business rule cannot be tied to one of those sources, leave it out or mark it
+    as uncertain in the evidence; do not invent it.
+
 ---
 
 ## Step 5 — Self-validation
@@ -400,11 +498,13 @@ developer to run the checks.
 
 ### How to run the checks
 
-From the repo root, run:
+From the target repo root, run the structural tools from the Skill_Generator
+checkout. If the generator repo is not the current working directory, use an
+absolute path or set `SKILL_GENERATOR_HOME` first.
 
 ```bash
-python3 lib/validate.py .github/skills/<domain-id>/SKILL.md
-python3 lib/citation_check.py .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/validate.py" .github/skills/<domain-id>/SKILL.md
+python3 "$SKILL_GENERATOR_HOME/lib/citation_check.py" .github/skills/<domain-id>/SKILL.md
 ```
 
 ### What to do on failure
@@ -437,23 +537,31 @@ Gate 1 catch. These are complementary layers, not alternatives.
 
 ## Step 6 — Link pass
 
-After all SKILL.md files pass self-validation, run the link pass.
+After all SKILL.md files pass self-validation, run the dependency/link pass.
 
-Walk each generated SKILL.md and identify integration points where one domain
-calls or receives from another domain that also has a SKILL.md in this run.
-For each such pair:
+Walk each generated SKILL.md and identify integration points where one feature
+calls, receives from, shares a data contract with, reads tables owned by, or
+uses configuration/events/files produced by another feature that also has a
+SKILL.md in this run. For each such pair:
 
-1. Confirm the calling domain's `## Integration Points` section names the
-   called domain.
-2. Confirm the called domain's `## Integration Points` section names the
-   calling domain.
-3. If either side is missing the link, add it.
+1. Add the called/required feature to the caller's `depends_on` frontmatter.
+2. Add the caller to the called feature's `depended_on_by` frontmatter.
+3. Confirm the caller's `## Integration Points` section names the dependency
+   and explains why it depends on it.
+4. Confirm the provider's `## Integration Points` section names the dependent
+   feature and explains what it provides.
+5. If either side is missing the metadata or prose link, add it.
 
-Both sides of every integration link must be present before Halt Gate 2.
-A one-sided link is a documentation error.
+Both sides of every dependency link must be present before Halt Gate 2. A
+one-sided link is a documentation error because update propagation depends on
+the graph.
 
 Write the links using domain IDs, not file paths. Example:
 `This domain is called by **owner-registration** to resolve pet ownership records.`
+
+After any link-pass edit, re-run `lib/validate.py` and `lib/citation_check.py`
+on every edited SKILL.md. Halt Gate 2 must report the post-link validation
+result, not the pre-link result.
 
 ---
 
@@ -465,11 +573,15 @@ After the link pass, present a summary to the developer:
 ## Generation complete
 
 I wrote N SKILL.md files:
-- .github/skills/vets-management/SKILL.md — passed validation
-- .github/skills/visit-scheduling/SKILL.md — passed validation
-- .github/skills/owner-registration/SKILL.md — passed validation
+- .github/skills/vets-management/SKILL.md — confidence HIGH, review_required false, passed validation
+- .github/skills/visit-scheduling/SKILL.md — confidence HIGH, review_required false, passed validation
+- .github/skills/shared-legacy/SKILL.md — confidence LOW, review_required true, passed validation
 
-Link pass: found 3 cross-domain connections; both sides updated.
+Dependency pass: found 3 cross-feature dependencies; frontmatter and both
+Integration Points sections updated. Post-link validation passed.
+
+Review queue:
+- .github/skills/shared-legacy/SKILL.md — LOW confidence; lead review required
 
 Audit log saved to: .github/skills/.skill-gen-audit.md
 
@@ -546,11 +658,17 @@ One bullet per change: what changed and why (use developer's exact words).>
 |--------|-------------|-------------------|
 | vets-management | PASS | PASS |
 
-## Cross-domain links
+## Review queue
 
-| Caller       | Called          | Link direction | Both sides present? |
-|--------------|-----------------|----------------|---------------------|
-| owner-reg    | vets-management | calls → | yes |
+| Domain | Confidence | Review required | Reason |
+|--------|------------|-----------------|--------|
+| shared-legacy | LOW | true | Mixed package ownership; generated as draft |
+
+## Cross-feature dependencies
+
+| Dependent feature | Provider feature | Evidence | Both sides present? |
+|-------------------|------------------|----------|---------------------|
+| invoice-compare | participant | Invoice comparison reads participant identity/eligibility before matching invoices | yes |
 ```
 
 ---
@@ -571,10 +689,12 @@ hierarchy (e.g., `com.example.billing`, `com.example.customer`). Do not group
 by `com.example` alone — that is too coarse. Do not group by
 `com.example.billing.internal.util` — that is too fine.
 
-**Rule 3: Do not create a domain for infrastructure.**
+**Rule 3: Treat infrastructure as support context, not business capability.**
 Classes that exist only to wire up Spring, configure Hibernate, register beans,
-or manage database migrations are not a domain. Group them into the most
-relevant domain's `## Integration Points` section as "shared infrastructure".
+or manage database migrations are not business features. Usually document them
+inside the relevant feature's `## Integration Points`. If they are important for
+onboarding or startup sequencing, generate a LOW-confidence support skill with
+`review_required: true` instead of pretending it is a normal business domain.
 
 **Rule 4: Prefer 5–15 classes per domain.**
 A domain with 2 classes is probably a support package that belongs elsewhere.
@@ -601,8 +721,8 @@ The agent proposes 6 domains, one per microservice:
   mostly routing config and could be merged into infrastructure)
 - `config-server` (2 classes, LOW confidence — agent flags: "This module has
   only 2 classes and exists purely for Spring Cloud config. It may not warrant
-  its own SKILL.md. Options: (a) keep as-is, (b) document as infrastructure
-  in api-gateway, (c) skip entirely.")
+  its own SKILL.md. Options: (a) generate as review-required support skill,
+  (b) document as infrastructure in api-gateway, (c) skip entirely.")
 - `discovery-server` (3 classes, LOW confidence — same reasoning)
 
 The developer sees the LOW-confidence flags and decides: merge `config-server`
@@ -646,6 +766,8 @@ This SKILL.md should be updated when:
 
 - The artifact-3 contract changes (frontmatter fields added, removed, or renamed)
 - The halt gate format changes (different options, different confirmation phrases)
+- Confidence or review-required behavior changes
+- Dependency metadata (`depends_on`, `depended_on_by`) changes
 - The deterministic spine changes in a way that affects what `lib/validate.py`
   or `lib/citation_check.py` report
 - A new cross-contamination pattern is discovered during real-repo testing
