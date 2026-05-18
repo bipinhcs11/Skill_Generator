@@ -1,13 +1,19 @@
 # Skill Generator v2
 
-Turns a Java repository into a set of feature-based SKILL.md files.
-A developer types one sentence. The agent walks the repo, produces
-auditable evidence per domain, halts for human review, generates skill
-files, and self-validates before committing.
+Turns a Java repository into feature-based SKILL.md files that AI assistants can
+read before answering feature questions. A developer types one sentence. The
+agent walks the repo, produces auditable evidence per feature, generates
+reviewable skills with confidence and dependency metadata, self-validates, and
+keeps the dependency graph ready for future updates.
 
-**Status:** Foundation pass complete (Milestone 0 + Milestone 1 in progress).
-Not yet ready for production use. See `docs/v2-progress-report.md` for
-current state and next actions.
+The enterprise value is straightforward: save developer hours, improve the
+quality of generated code changes, reduce repeated GitHub Copilot premium-token
+spend on repo rediscovery, and give every approved coding agent durable feature
+context before it edits code.
+
+**Status:** v2 foundation complete and ready for second-team evaluation. Not yet
+ready for unsupervised enterprise-wide rollout. See `docs/v2-progress-report.md`
+for current state and next actions.
 
 ---
 
@@ -16,10 +22,10 @@ current state and next actions.
 1. Open VS Code, IntelliJ, or any IDE with Claude Code / Copilot Chat / Codex
 2. Open the target Java repository
 3. Type: *"Analyze this project and generate the feature skills"*
-4. Agent walks the repo and emits **structured evidence per candidate domain**
-5. Review the evidence. Type your approval or request changes.
-6. Agent generates one SKILL.md per domain, self-validates, runs the dependency pass
-7. Agent shows you the summary. Type "yes" to commit.
+4. Agent walks the repo and emits **structured evidence per candidate feature**
+5. Review the evidence and any LOW-confidence review queue.
+6. Agent generates one SKILL.md per feature, self-validates, runs the dependency pass.
+7. Agent shows the summary. Type "yes" to commit.
 
 Five typed messages. No CLI to install. No Python dependencies for the agent workflow.
 
@@ -41,7 +47,8 @@ Skill_Generator/
 ├── skills/
 │   ├── skill-generator/SKILL.md    ← The agent contract (start here)
 │   ├── skill-validator/SKILL.md    ← Post-generation semantic review
-│   ├── skill-updater/SKILL.md      ← Phase 2: in-place updates from git diffs
+│   ├── skill-tracker/SKILL.md      ← PR/change impact detection, no edits
+│   ├── skill-updater/SKILL.md      ← In-place updates from approved impact plans
 │   ├── file-delivery/SKILL.md      ← Reference skill
 │   ├── invoice-compare/SKILL.md    ← Reference skill
 │   └── payment-method-determination/SKILL.md  ← Reference skill
@@ -51,9 +58,7 @@ Skill_Generator/
 │   ├── frontmatter.py              ← Parse/serialize YAML frontmatter
 │   └── audit_log.py                ← Format evidence-phase audit artifacts
 ├── examples/                       ← Reference Java examples
-├── docs/                           ← Guides, diagrams, design history
-└── legacy/                         ← v1 Python pipeline (preserved, not deleted)
-    └── FeatureBased_Skill_Generator_Agent/
+└── docs/                           ← Guides, flow diagrams, templates, design history
 ```
 
 ---
@@ -73,45 +78,55 @@ The boundary is:
 
 - **In `lib/`:** frontmatter parsing, section-order validation, citation regex,
   audit-log formatting
-- **Not in `lib/`:** crawler logic, domain inference, feature grouping heuristics,
+- **Not in `lib/`:** crawler logic, feature inference, feature grouping heuristics,
   planner logic, semantic analysis of any kind
+
+---
+
+## Agent roles
+
+| Agent skill | When to use it | Output |
+|---|---|---|
+| `skills/skill-generator/SKILL.md` | First run on a Java repo with no generated skills | Feature map, SKILL.md files, dependency graph, audit log |
+| `skills/skill-tracker/SKILL.md` | PR review or local change check: "which skills are impacted?" | Impact report, stale-skill findings, review queue, recommended next step |
+| `skills/skill-updater/SKILL.md` | After tracker or human approval says skills need updates | Minimal edits to affected SKILL.md files and dependency metadata |
+| `skills/skill-validator/SKILL.md` | Quality review after generation or update | PASS / NEEDS_REVIEW / BLOCKING_ISSUES verdicts |
+
+The tracker is intentionally read-only. It helps teams avoid rewriting every
+skill for every PR, which is where the steady-state time and premium-token
+savings come from.
 
 ---
 
 ## The headline risk
 
-**Silent plausible wrongness.** The v1 Python pipeline failed loudly.
-A pure-agent system fails *beautifully* — coherent but wrong, persuasive but
-incomplete. Three layers defend against this:
+**Silent plausible wrongness.** A pure-agent system can fail *beautifully* —
+coherent but wrong, persuasive but incomplete. Six layers defend against this:
 
 1. **Evidence phase** — the agent produces auditable structured reasoning per
-   candidate domain before generation
+   candidate feature before generation
 2. **Confidence metadata** — every generated skill carries `confidence` and
    `review_required`, so LOW-confidence skills become reviewable drafts rather
    than hidden uncertainty
 3. **Dependency graph** — generated skills maintain `depends_on` and
    `depended_on_by`, so updates propagate across feature boundaries
-4. **Halt gates** — human reviews evidence + plan, and reviews output before commit
-5. **Deterministic spine** — structural errors caught before output reaches the human
+4. **Tracker pass** — PR changes can be checked for stale or missing skills
+   before any rewrite happens
+5. **Halt gates** — human reviews evidence + plan, and reviews output before commit
+6. **Deterministic spine** — structural errors caught before output reaches the human
 
 See `skills/skill-generator/SKILL.md` for the complete agent contract.
 
-For later code changes, use `skills/skill-updater/SKILL.md`. It maps git diffs
-across Java, properties/YAML, MyBatis mapper XML, SQL/migrations, Spring Batch,
-and scripts to affected feature skills, propagates through dependencies, bumps
-versions, and records `.github/skills/.skill-update-audit.md`.
+For Copilot rollout, copy `docs/templates/copilot-instructions.md` into each
+target repo as `.github/copilot-instructions.md` so Copilot reads feature skills
+before answering or editing.
 
----
-
-## What is in `legacy/`
-
-The v1 Python pipeline: `crawler.py`, `planner.py`, `generator.py`,
-`linker.py`, `doctor.py`. These are preserved in
-`legacy/FeatureBased_Skill_Generator_Agent/` for reference and rollback.
-They are not used by v2.
-
-The eight defects found during the petclinic real-repo test drove the v2 pivot.
-See `docs/design-history/` for the full record.
+For later code changes, use `skills/skill-tracker/SKILL.md` first when you need
+to know whether a PR affects any skills. If updates are needed, use
+`skills/skill-updater/SKILL.md`. The updater maps git diffs across Java,
+properties/YAML, MyBatis mapper XML, SQL/migrations, Spring Batch, and scripts
+to affected feature skills, propagates through dependencies, bumps versions,
+and records `.github/skills/.skill-update-audit.md`.
 
 ---
 
@@ -119,8 +134,9 @@ See `docs/design-history/` for the full record.
 
 | Workload | Recommended host |
 |---|---|
-| Unknown or legacy repo | Claude Opus-class or Codex high-reasoning |
+| Unknown, large, or XML-heavy repo | Claude Opus-class or Codex high-reasoning |
 | Clean Spring Boot service | Claude Sonnet-class or Codex |
+| PR impact tracking | Sonnet-class, Codex, or Copilot Chat |
 | Incremental update | Sonnet-class, Codex, or Copilot Chat |
 | Daily skill consumption | Any host — Copilot Chat, Claude, Codex |
 

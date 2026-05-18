@@ -6,13 +6,13 @@
 - Always work on a feature branch named `feat/v2-<scope>`.
 - Make small, logical commits. One concern per commit.
 - Stop before merge. The developer reviews and merges manually.
-- Preserve `legacy/FeatureBased_Skill_Generator_Agent/` completely.
-  Do not delete, rename, or modify any file under `legacy/`.
+- Treat this repository as the standalone v2 product. Historical design notes
+  live under `docs/design-history/`; do not reintroduce the v1 Python pipeline.
 
 ## Lib boundary rule
 
 The `lib/` directory is the deterministic structural spine. Hard cap: 500 LOC combined.
-Adding any semantic analysis to `lib/` (domain inference, crawler logic, planner
+Adding any semantic analysis to `lib/` (feature inference, crawler logic, planner
 heuristics) requires an explicit decision record in `docs/design-history/`.
 If you are not sure whether something belongs in `lib/`, the answer is no.
 
