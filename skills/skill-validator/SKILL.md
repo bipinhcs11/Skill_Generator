@@ -1,6 +1,6 @@
 ---
 skill_id: skill-validator
-version: 3
+version: 4
 last_updated: "2026-05-18"
 feature_name: "Validate generated SKILL.md files"
 primary_packages:
@@ -68,6 +68,11 @@ The contract requires:
 | `key_classes` frontmatter | Every class listed exists as a `.java` file in the repo |
 | `depends_on` frontmatter | Optional non-empty list of provider feature ids this skill depends on |
 | `depended_on_by` frontmatter | Optional non-empty list of dependent feature ids that rely on this skill |
+| `aliases` frontmatter | Optional non-empty list of natural-language phrases or acronyms; free-form strings |
+| `business_terms` frontmatter | Optional non-empty list of domain-language terms; free-form strings |
+| `owner_team` frontmatter | Optional non-empty string; team identifier (kebab-case encouraged to align with CODEOWNERS) |
+| `business_owner` frontmatter | Optional non-empty string; business stakeholder or team |
+| `technical_owner` frontmatter | Optional non-empty string; engineering owner or team |
 | `## Overview` | 2-4 sentences, no placeholder text |
 | `## Key Classes and Responsibilities` | Every class in `key_classes` frontmatter appears here; no class is listed here that is absent from frontmatter |
 | `## Data Flow` | At least one class-qualified citation: `ClassName.methodName()` or fully qualified class name |

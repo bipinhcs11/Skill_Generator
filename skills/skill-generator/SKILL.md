@@ -1,6 +1,6 @@
 ---
 skill_id: skill-generator
-version: 4
+version: 5
 last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
@@ -408,8 +408,45 @@ depends_on:                        # Optional; omit when none
   - <feature-id-this-feature-calls-or-requires>
 depended_on_by:                    # Optional; omit when none
   - <feature-id-that-calls-or-requires-this-feature>
+
+# Discovery + governance fields (all optional but strongly recommended
+# at enterprise scale; see "Discovery and ownership metadata" below)
+aliases:                           # Optional; natural-language phrases users say
+  - <alias 1>
+  - <acronym>
+business_terms:                    # Optional; domain language for the feature
+  - <business term 1>
+owner_team:                        # Optional; team identifier (kebab-case
+  <team-id>                        # encouraged; aligns with CODEOWNERS)
+business_owner:                    # Optional; business stakeholder name or team
+  <business owner>
+technical_owner:                   # Optional; engineering owner name or team
+  <technical owner>
 ---
 ```
+
+### Discovery and ownership metadata (optional fields)
+
+These fields are optional in `lib/validate.py` but strongly recommended at
+enterprise scale. Generate them when the source evidence supports it; omit
+the field entirely when it does not.
+
+| Field | What it is for | How to fill it |
+|---|---|---|
+| `aliases` | Natural-language phrases or acronyms developers use for this feature | Pull from README, JavaDoc, package-info.java, controller class names, or properties. Examples: `INVCOMP`, `invoice compare`, `invoice comparison report`, `reconciliation`. List 2-6; do not pad. |
+| `business_terms` | Domain language a non-engineer would use | Pull from controller endpoints, business-rule comments, validation error messages. Examples: `participant eligibility`, `invoice reconciliation`, `late payment`. |
+| `owner_team` | Team identifier matching CODEOWNERS conventions | If `CODEOWNERS` exists, use the team name written there (e.g., `@org/billing-platform` becomes `billing-platform`). If not, leave it for the developer to fill at Halt Gate 1. |
+| `business_owner` | Human or team accountable for the business behavior | Pull from README, OWNERS files, JavaDoc `@author`, or leave for the developer. |
+| `technical_owner` | Engineering owner accountable for the code | Same sources as `business_owner`. Often the same team. |
+
+If a field cannot be filled from source evidence, leave it out — do not invent
+owners or aliases. Surface the gap at Halt Gate 1 so the developer can fill it
+or explicitly decline.
+
+The aliases and business_terms fields feed the per-repo `.github/skills/catalog.md`
+(see catalog template in `docs/templates/catalog.md`). They are the discovery
+layer that lets Copilot/Claude/Codex match a developer's natural-language
+request to the right skill.
 
 Then sections in this order:
 
