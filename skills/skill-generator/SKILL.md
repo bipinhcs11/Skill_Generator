@@ -1,6 +1,6 @@
 ---
 skill_id: skill-generator
-version: 5
+version: 6
 last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
@@ -61,23 +61,25 @@ Read the halt-gate rules and the evidence-phase template with that risk in mind.
 ## Pipeline overview
 
 ```
-Step 1  Trigger + pre-flight
-Step 2  Crawl (agent walks repo with its own tools)
-Step 3  Evidence phase (structured artifact per candidate feature)
+Step 1    Trigger + pre-flight
+Step 2    Crawl (agent walks repo with its own tools)
+Step 3    Evidence phase (structured artifact per candidate feature)
 ── HALT GATE 1 ── Human reviews evidence + plan, may edit grouping
-Step 4  Generate (one SKILL.md per planned feature; LOW confidence = review required)
-Step 5  Self-validate (deterministic spine via lib/)
-Step 6  Link pass (cross-feature dependencies, metadata + both sides updated)
+Step 4    Generate (one SKILL.md per planned feature; LOW confidence = review required)
+Step 5    Self-validate (deterministic spine via lib/)
+Step 6    Link pass (cross-feature dependencies, metadata + both sides updated)
+Step 6.5  Catalog generation (.github/skills/catalog.md — discovery layer)
 ── HALT GATE 2 ── Human reviews .github/skills/, approves commit
-Step 7  Commit
+Step 7    Commit
 ```
 
-Steps 3, 5, and 6 are the key additions over v1. Step 3 adds auditability and
-surfaces the agent's confidence. Step 5 puts the deterministic checker inside
-the agent's inner loop so structural errors never reach the human. Step 6 makes
-feature dependencies durable, so a later change to participant management can
-propagate to invoice comparison when invoice comparison depends on participant
-data.
+Steps 3, 5, 6, and 6.5 are the key additions over v1. Step 3 adds auditability
+and surfaces the agent's confidence. Step 5 puts the deterministic checker
+inside the agent's inner loop so structural errors never reach the human. Step
+6 makes feature dependencies durable, so a later change to participant
+management can propagate to invoice comparison when invoice comparison depends
+on participant data. Step 6.5 produces the discovery catalog AI assistants
+read first when matching a developer's natural-language request to a skill.
 
 ---
 
@@ -620,6 +622,62 @@ result, not the pre-link result.
 
 ---
 
+## Step 6.5 — Catalog generation
+
+After the link pass and post-link validation pass, write the per-repo skill
+catalog to `.github/skills/catalog.md`.
+
+The catalog is the **discovery layer**. AI assistants (Copilot, Claude, Codex)
+read this file first to map a developer's natural-language request to the
+right skill, then read the matching `SKILL.md`. Without the catalog, every
+host AI has to grep the markdown files itself — which works inconsistently
+and burns context every time.
+
+### How to build the catalog
+
+1. Walk every `SKILL.md` file generated in this run.
+2. For each skill, collect: `skill_id`, `feature_name`, `confidence`,
+   `review_required`, `version`, `last_updated`, `owner_team`,
+   `business_owner`, `technical_owner`, `depends_on`, `depended_on_by`,
+   `aliases`, `business_terms`.
+3. Build the Quick lookup table: one row per entry in `aliases` and
+   `business_terms`, mapping the phrase to `[<skill_id>](<skill_id>/SKILL.md)`.
+   Use backticks around the phrase. Sort rows alphabetically by phrase.
+4. Build the Skills by feature blocks: one block per skill, sorted
+   alphabetically by `skill_id`. Include every collected field that has a
+   value; omit empty fields entirely. Do not write "none" or "N/A".
+5. Copy the "How AI assistants should use this catalog" and "How developers
+   should update this catalog" sections from `docs/templates/catalog.md`
+   verbatim — these are operating instructions, not generated content.
+6. Fill the catalog metadata at the bottom (generator version, skill count,
+   generation datetime, repo path, branch name).
+
+### Template
+
+Use `docs/templates/catalog.md` as the structural template. The template
+ships with placeholder rows that the generator replaces with real data.
+
+### When a skill has no aliases or business_terms
+
+A skill without aliases or business_terms still appears in the Skills by
+feature blocks. It just contributes no rows to the Quick lookup table.
+Surface this at Halt Gate 2 as a coverage gap: "skill X has no discovery
+phrases; consider adding aliases or business_terms before commit."
+
+### Validation
+
+The catalog is not validated by `lib/validate.py` (it is not a SKILL.md
+file). Instead, perform two structural sanity checks before Halt Gate 2:
+
+1. Every `skill_id` in the catalog corresponds to an existing
+   `.github/skills/<skill_id>/SKILL.md` file.
+2. Every linked path in the catalog (Quick lookup target + Skills by
+   feature `depends_on`/`depended_on_by` links) resolves to a real file.
+
+If either check fails, stop and report the inconsistency to the developer.
+
+---
+
 ## Halt Gate 2 — Output review before commit
 
 After the link pass, present a summary to the developer:
@@ -635,8 +693,13 @@ I wrote N SKILL.md files:
 Dependency pass: found 3 cross-feature dependencies; frontmatter and both
 Integration Points sections updated. Post-link validation passed.
 
+Catalog: .github/skills/catalog.md — N skills indexed; M alias/business-term
+phrases mapped. Discovery coverage: K of N skills have at least one alias
+or business term (skills with no discovery phrases flagged below).
+
 Review queue:
 - .github/skills/shared-support/SKILL.md — LOW confidence; lead review required
+- .github/skills/<skill-id>/SKILL.md — no aliases or business_terms; consider adding before commit
 
 Audit log saved to: .github/skills/.skill-gen-audit.md
 
