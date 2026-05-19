@@ -1,6 +1,6 @@
 ---
 skill_id: skill-generator
-version: 6
+version: 7
 last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
@@ -418,12 +418,9 @@ aliases:                           # Optional; natural-language phrases users sa
   - <acronym>
 business_terms:                    # Optional; domain language for the feature
   - <business term 1>
-owner_team:                        # Optional; team identifier (kebab-case
-  <team-id>                        # encouraged; aligns with CODEOWNERS)
-business_owner:                    # Optional; business stakeholder name or team
-  <business owner>
-technical_owner:                   # Optional; engineering owner name or team
-  <technical owner>
+owner_team: <team-id>              # Optional; kebab-case; aligns with CODEOWNERS
+business_owner: <business owner>   # Optional; business stakeholder name or team
+technical_owner: <technical owner> # Optional; engineering owner name or team
 ---
 ```
 
