@@ -1,6 +1,6 @@
 ---
 skill_id: skill-updater
-version: 1
+version: 2
 last_updated: "2026-05-18"
 trigger_phrases:
   - "update feature skills"
@@ -233,6 +233,21 @@ For each affected skill:
 7. Preserve or update `confidence` based on the new evidence.
 8. Set `review_required: true` if the change is ambiguous, propagated through a
    dependency, or LOW confidence.
+9. **Do not introduce secrets, credentials, or sensitive runtime values.** When
+   updating `## Configuration`, name config keys but redact or omit sensitive
+   values (passwords, API keys, tokens, OAuth client secrets, private keys,
+   JDBC connection strings with embedded credentials, AWS access keys, signing
+   keys, webhook secrets). Customer-identifying reference data found in seed
+   SQL must be excluded — describe the *shape* of the data, not actual values.
+   Use the literal config key name with a redacted placeholder, for example
+   `spring.datasource.password = <redacted: secret>`. If an existing skill
+   already contains a sensitive value (carried over from before this rule
+   landed), redact it during the update.
+
+   This rule is the **prevention layer** of a defense-in-depth model.
+   `skill-generator` enforces the same rule on first generation;
+   `skill-validator` provides a safety-net scan. Do not assume the validator
+   will save you — scrub at update time.
 
 Never overwrite a whole SKILL.md just because one class changed. This is an
 update workflow, not first generation.

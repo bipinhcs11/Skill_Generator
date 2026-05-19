@@ -1,6 +1,6 @@
 ---
 skill_id: skill-generator
-version: 3
+version: 4
 last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
@@ -487,6 +487,24 @@ Then sections in this order:
     SQL constraints/seed data, Spring Batch jobs/steps, and scripts/jobs. If a
     business rule cannot be tied to one of those sources, leave it out or mark it
     as uncertain in the evidence; do not invent it.
+
+11. **No secrets, credentials, or sensitive runtime values in generated skills.**
+    When emitting the `## Configuration` section, name the config key but redact
+    or omit sensitive values. Mask anything matching common sensitive-value
+    patterns: passwords, API keys, tokens, OAuth client secrets, private keys,
+    JDBC connection strings with embedded credentials, AWS access keys, signing
+    keys, webhook secrets. Customer-identifying reference data (real names,
+    emails, account numbers, SSNs) found in seed SQL must also be excluded —
+    describe the *shape* of the data, not actual values. Use the literal config
+    key name with a redacted placeholder, for example
+    `spring.datasource.password = <redacted: secret>` or
+    `aws.access-key-id = <redacted>`.
+
+    This rule is the **prevention layer** of a defense-in-depth model.
+    `skill-updater` enforces the same rule on updates; `skill-validator`
+    provides a safety-net scan for anything that slipped through. Do not
+    assume the validator will save you — scrub at write time as if no other
+    layer exists.
 
 ---
 

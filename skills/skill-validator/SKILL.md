@@ -1,6 +1,6 @@
 ---
 skill_id: skill-validator
-version: 2
+version: 3
 last_updated: "2026-05-18"
 feature_name: "Validate generated SKILL.md files"
 primary_packages:
@@ -35,8 +35,11 @@ files.
 - Check that every responsibility claim is consistent with what the class actually does
 - Check that integration points are bidirectional (if A calls B, B's skill mentions A)
 - Check that configuration keys exist in the actual config files
+- **Scan for sensitive values** (secrets, credentials, customer PII) that the
+  generator or updater contracts should have prevented — safety-net layer
 - Surface quality issues using the standard verdict format below
-- Self-correct on first failure before surfacing to the developer
+- Self-correct on first failure before surfacing to the developer (except
+  sensitive-value findings, which never self-correct)
 
 **Does not:**
 - Rewrite SKILL.md files without developer approval except for the two allowed self-corrections below
@@ -169,6 +172,39 @@ source evidence named or implied by the skill:
 
 Flag a **consistency issue** when a rule is plausible but not source-backed.
 
+### Check 7 — Sensitive value safety net
+
+This is the **safety-net layer** of a defense-in-depth model. The
+`skill-generator` and `skill-updater` contracts require those skills to
+prevent sensitive values from being written into SKILL.md files. This check
+catches anything that slipped through.
+
+For each SKILL.md, scan all section bodies (especially `## Configuration`,
+`## Data Flow`, and `## Business Rules and Edge Cases`) for tokens matching
+common sensitive-value patterns:
+
+- Plausible password/secret/token/key values: long alphanumeric strings (≥16
+  chars) appearing as values after keys named `password`, `passwd`, `pwd`,
+  `secret`, `token`, `apikey`, `api_key`, `client_secret`, `private_key`,
+  `signing_key`, `webhook_secret`
+- JDBC or database connection strings with embedded credentials, e.g.
+  `jdbc:[^\s]+:[^\s]+@`, `postgres://[^:]+:[^@]+@`
+- AWS-style access keys: `AKIA[0-9A-Z]{16}`
+- PEM private key markers: `-----BEGIN [A-Z ]+PRIVATE KEY-----`
+- Real-looking email addresses in seed/reference data sections (any
+  `<word>@<word>.<tld>` not obviously a placeholder like `user@example.com`)
+- Plausible US SSNs or credit-card-shaped numbers in seed/reference data
+
+If any match is found, record as a **[SENSITIVE VALUE]** blocking issue.
+
+The validator must **not** self-correct sensitive-value findings — surface
+to the developer and stop. The skill cannot be considered safe to commit
+until the value is removed by the author.
+
+When sensitive values appear here, the generator or updater contract was not
+followed at write time. Flag both the skill *and* the agent-contract gap in
+the verdict so the platform team can investigate why prevention failed.
+
 ---
 
 ## Self-correction rules
@@ -208,9 +244,11 @@ Responsibility consistency: PASS | ISSUES_FOUND
 Integration bidirectionality: PASS | GAPS_FOUND | SELF_CORRECTED
 Configuration existence: PASS | GAPS_FOUND
 Business/source-backed rules: PASS | ISSUES_FOUND
+Sensitive value safety net: PASS | BLOCKING_FOUND
 
 Issues (if any):
 - [BLOCKING] <issue description>
+- [SENSITIVE VALUE] <issue description; never self-corrected>
 - [CONSISTENCY] <issue description>
 - [LINK GAP] <issue description>
 - [CONFIG GAP] <issue description>
@@ -222,11 +260,14 @@ Recommendation:
 <one or two sentences on what the developer should do next>
 ```
 
-Use `BLOCKING_ISSUES` status when Check 1 or Check 2 fails. Use
+Use `BLOCKING_ISSUES` status when Check 1, Check 2, or Check 7 fails. Use
 `NEEDS_REVIEW` when consistency or configuration issues are found but nothing
 blocks the skill from being used. Use `PASS_WITH_SELF_CORRECTIONS` when the
 only action taken was the two allowed self-correction types. Use `PASS` when
 no issues were found and no self-corrections were needed.
+
+Sensitive-value findings (Check 7) are always `BLOCKING_ISSUES` and must
+never be self-corrected.
 
 ---
 
