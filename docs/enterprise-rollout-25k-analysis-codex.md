@@ -98,9 +98,9 @@ For June:
 **Architectural Verdict**
 The current 4-agent split is right:
 
-`generator` creates durable feature context.  
-`tracker` detects stale/impacted skills without edits.  
-`updater` applies scoped changes.  
+`generator` creates durable feature context.
+`tracker` detects stale/impacted skills without edits.
+`updater` applies scoped changes.
 `validator` checks quality.
 
 The next big unlock is not more generation logic. It is **discoverability and governance**: aliases/catalog, PR policy, owners, and metrics.
