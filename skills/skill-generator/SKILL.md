@@ -1,6 +1,6 @@
 ---
 skill_id: skill-generator
-version: 3
+version: 7
 last_updated: "2026-05-18"
 trigger_phrases:
   - "analyze this project and generate the feature skills"
@@ -61,23 +61,25 @@ Read the halt-gate rules and the evidence-phase template with that risk in mind.
 ## Pipeline overview
 
 ```
-Step 1  Trigger + pre-flight
-Step 2  Crawl (agent walks repo with its own tools)
-Step 3  Evidence phase (structured artifact per candidate feature)
+Step 1    Trigger + pre-flight
+Step 2    Crawl (agent walks repo with its own tools)
+Step 3    Evidence phase (structured artifact per candidate feature)
 ── HALT GATE 1 ── Human reviews evidence + plan, may edit grouping
-Step 4  Generate (one SKILL.md per planned feature; LOW confidence = review required)
-Step 5  Self-validate (deterministic spine via lib/)
-Step 6  Link pass (cross-feature dependencies, metadata + both sides updated)
+Step 4    Generate (one SKILL.md per planned feature; LOW confidence = review required)
+Step 5    Self-validate (deterministic spine via lib/)
+Step 6    Link pass (cross-feature dependencies, metadata + both sides updated)
+Step 6.5  Catalog generation (.github/skills/catalog.md — discovery layer)
 ── HALT GATE 2 ── Human reviews .github/skills/, approves commit
-Step 7  Commit
+Step 7    Commit
 ```
 
-Steps 3, 5, and 6 are the key additions over v1. Step 3 adds auditability and
-surfaces the agent's confidence. Step 5 puts the deterministic checker inside
-the agent's inner loop so structural errors never reach the human. Step 6 makes
-feature dependencies durable, so a later change to participant management can
-propagate to invoice comparison when invoice comparison depends on participant
-data.
+Steps 3, 5, 6, and 6.5 are the key additions over v1. Step 3 adds auditability
+and surfaces the agent's confidence. Step 5 puts the deterministic checker
+inside the agent's inner loop so structural errors never reach the human. Step
+6 makes feature dependencies durable, so a later change to participant
+management can propagate to invoice comparison when invoice comparison depends
+on participant data. Step 6.5 produces the discovery catalog AI assistants
+read first when matching a developer's natural-language request to a skill.
 
 ---
 
@@ -408,8 +410,42 @@ depends_on:                        # Optional; omit when none
   - <feature-id-this-feature-calls-or-requires>
 depended_on_by:                    # Optional; omit when none
   - <feature-id-that-calls-or-requires-this-feature>
+
+# Discovery + governance fields (all optional but strongly recommended
+# at enterprise scale; see "Discovery and ownership metadata" below)
+aliases:                           # Optional; natural-language phrases users say
+  - <alias 1>
+  - <acronym>
+business_terms:                    # Optional; domain language for the feature
+  - <business term 1>
+owner_team: <team-id>              # Optional; kebab-case; aligns with CODEOWNERS
+business_owner: <business owner>   # Optional; business stakeholder name or team
+technical_owner: <technical owner> # Optional; engineering owner name or team
 ---
 ```
+
+### Discovery and ownership metadata (optional fields)
+
+These fields are optional in `lib/validate.py` but strongly recommended at
+enterprise scale. Generate them when the source evidence supports it; omit
+the field entirely when it does not.
+
+| Field | What it is for | How to fill it |
+|---|---|---|
+| `aliases` | Natural-language phrases or acronyms developers use for this feature | Pull from README, JavaDoc, package-info.java, controller class names, or properties. Examples: `INVCOMP`, `invoice compare`, `invoice comparison report`, `reconciliation`. List 2-6; do not pad. |
+| `business_terms` | Domain language a non-engineer would use | Pull from controller endpoints, business-rule comments, validation error messages. Examples: `participant eligibility`, `invoice reconciliation`, `late payment`. |
+| `owner_team` | Team identifier matching CODEOWNERS conventions | If `CODEOWNERS` exists, use the team name written there (e.g., `@org/billing-platform` becomes `billing-platform`). If not, leave it for the developer to fill at Halt Gate 1. |
+| `business_owner` | Human or team accountable for the business behavior | Pull from README, OWNERS files, JavaDoc `@author`, or leave for the developer. |
+| `technical_owner` | Engineering owner accountable for the code | Same sources as `business_owner`. Often the same team. |
+
+If a field cannot be filled from source evidence, leave it out — do not invent
+owners or aliases. Surface the gap at Halt Gate 1 so the developer can fill it
+or explicitly decline.
+
+The aliases and business_terms fields feed the per-repo `.github/skills/catalog.md`
+(see catalog template in `docs/templates/catalog.md`). They are the discovery
+layer that lets Copilot/Claude/Codex match a developer's natural-language
+request to the right skill.
 
 Then sections in this order:
 
@@ -488,6 +524,24 @@ Then sections in this order:
     business rule cannot be tied to one of those sources, leave it out or mark it
     as uncertain in the evidence; do not invent it.
 
+11. **No secrets, credentials, or sensitive runtime values in generated skills.**
+    When emitting the `## Configuration` section, name the config key but redact
+    or omit sensitive values. Mask anything matching common sensitive-value
+    patterns: passwords, API keys, tokens, OAuth client secrets, private keys,
+    JDBC connection strings with embedded credentials, AWS access keys, signing
+    keys, webhook secrets. Customer-identifying reference data (real names,
+    emails, account numbers, SSNs) found in seed SQL must also be excluded —
+    describe the *shape* of the data, not actual values. Use the literal config
+    key name with a redacted placeholder, for example
+    `spring.datasource.password = <redacted: secret>` or
+    `aws.access-key-id = <redacted>`.
+
+    This rule is the **prevention layer** of a defense-in-depth model.
+    `skill-updater` enforces the same rule on updates; `skill-validator`
+    provides a safety-net scan for anything that slipped through. Do not
+    assume the validator will save you — scrub at write time as if no other
+    layer exists.
+
 ---
 
 ## Step 5 — Self-validation
@@ -565,6 +619,62 @@ result, not the pre-link result.
 
 ---
 
+## Step 6.5 — Catalog generation
+
+After the link pass and post-link validation pass, write the per-repo skill
+catalog to `.github/skills/catalog.md`.
+
+The catalog is the **discovery layer**. AI assistants (Copilot, Claude, Codex)
+read this file first to map a developer's natural-language request to the
+right skill, then read the matching `SKILL.md`. Without the catalog, every
+host AI has to grep the markdown files itself — which works inconsistently
+and burns context every time.
+
+### How to build the catalog
+
+1. Walk every `SKILL.md` file generated in this run.
+2. For each skill, collect: `skill_id`, `feature_name`, `confidence`,
+   `review_required`, `version`, `last_updated`, `owner_team`,
+   `business_owner`, `technical_owner`, `depends_on`, `depended_on_by`,
+   `aliases`, `business_terms`.
+3. Build the Quick lookup table: one row per entry in `aliases` and
+   `business_terms`, mapping the phrase to `[<skill_id>](<skill_id>/SKILL.md)`.
+   Use backticks around the phrase. Sort rows alphabetically by phrase.
+4. Build the Skills by feature blocks: one block per skill, sorted
+   alphabetically by `skill_id`. Include every collected field that has a
+   value; omit empty fields entirely. Do not write "none" or "N/A".
+5. Copy the "How AI assistants should use this catalog" and "How developers
+   should update this catalog" sections from `docs/templates/catalog.md`
+   verbatim — these are operating instructions, not generated content.
+6. Fill the catalog metadata at the bottom (generator version, skill count,
+   generation datetime, repo path, branch name).
+
+### Template
+
+Use `docs/templates/catalog.md` as the structural template. The template
+ships with placeholder rows that the generator replaces with real data.
+
+### When a skill has no aliases or business_terms
+
+A skill without aliases or business_terms still appears in the Skills by
+feature blocks. It just contributes no rows to the Quick lookup table.
+Surface this at Halt Gate 2 as a coverage gap: "skill X has no discovery
+phrases; consider adding aliases or business_terms before commit."
+
+### Validation
+
+The catalog is not validated by `lib/validate.py` (it is not a SKILL.md
+file). Instead, perform two structural sanity checks before Halt Gate 2:
+
+1. Every `skill_id` in the catalog corresponds to an existing
+   `.github/skills/<skill_id>/SKILL.md` file.
+2. Every linked path in the catalog (Quick lookup target + Skills by
+   feature `depends_on`/`depended_on_by` links) resolves to a real file.
+
+If either check fails, stop and report the inconsistency to the developer.
+
+---
+
 ## Halt Gate 2 — Output review before commit
 
 After the link pass, present a summary to the developer:
@@ -580,8 +690,13 @@ I wrote N SKILL.md files:
 Dependency pass: found 3 cross-feature dependencies; frontmatter and both
 Integration Points sections updated. Post-link validation passed.
 
+Catalog: .github/skills/catalog.md — N skills indexed; M alias/business-term
+phrases mapped. Discovery coverage: K of N skills have at least one alias
+or business term (skills with no discovery phrases flagged below).
+
 Review queue:
 - .github/skills/shared-support/SKILL.md — LOW confidence; lead review required
+- .github/skills/<skill-id>/SKILL.md — no aliases or business_terms; consider adding before commit
 
 Audit log saved to: .github/skills/.skill-gen-audit.md
 

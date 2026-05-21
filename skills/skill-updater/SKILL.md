@@ -1,6 +1,6 @@
 ---
 skill_id: skill-updater
-version: 1
+version: 3
 last_updated: "2026-05-18"
 trigger_phrases:
   - "update feature skills"
@@ -42,16 +42,18 @@ the durable signal that makes this propagation possible.
 ## Pipeline overview
 
 ```
-Step 1  Pre-flight
-Step 2  Diff intake
-Step 3  Impact analysis
+Step 1    Pre-flight
+Step 2    Diff intake
+Step 3    Impact analysis
 -- HALT GATE 1 -- Human reviews affected skills + dependency propagation
-Step 4  Update affected SKILL.md files
-Step 5  Dependency maintenance
-Step 6  Self-validate
-Step 7  Write update audit log
+Step 4    Update affected SKILL.md files
+Step 5    Dependency maintenance
+Step 5.5  Catalog refresh (regenerate .github/skills/catalog.md if discovery
+          metadata changed)
+Step 6    Self-validate
+Step 7    Write update audit log
 -- HALT GATE 2 -- Human reviews output, approves commit
-Step 8  Commit
+Step 8    Commit
 ```
 
 ---
@@ -233,6 +235,21 @@ For each affected skill:
 7. Preserve or update `confidence` based on the new evidence.
 8. Set `review_required: true` if the change is ambiguous, propagated through a
    dependency, or LOW confidence.
+9. **Do not introduce secrets, credentials, or sensitive runtime values.** When
+   updating `## Configuration`, name config keys but redact or omit sensitive
+   values (passwords, API keys, tokens, OAuth client secrets, private keys,
+   JDBC connection strings with embedded credentials, AWS access keys, signing
+   keys, webhook secrets). Customer-identifying reference data found in seed
+   SQL must be excluded — describe the *shape* of the data, not actual values.
+   Use the literal config key name with a redacted placeholder, for example
+   `spring.datasource.password = <redacted: secret>`. If an existing skill
+   already contains a sensitive value (carried over from before this rule
+   landed), redact it during the update.
+
+   This rule is the **prevention layer** of a defense-in-depth model.
+   `skill-generator` enforces the same rule on first generation;
+   `skill-validator` provides a safety-net scan. Do not assume the validator
+   will save you — scrub at update time.
 
 Never overwrite a whole SKILL.md just because one class changed. This is an
 update workflow, not first generation.
@@ -255,6 +272,49 @@ For each real dependency:
 For removed dependencies, remove both sides and update the prose. If uncertain,
 keep the dependency and set `review_required: true` rather than deleting a real
 update path.
+
+---
+
+## Step 5.5 - Catalog refresh
+
+If any of the following changed during this update, regenerate
+`.github/skills/catalog.md` so the discovery layer stays in sync with the
+skills:
+
+- `aliases` frontmatter on any touched skill
+- `business_terms` frontmatter on any touched skill
+- `owner_team`, `business_owner`, or `technical_owner` on any touched skill
+- `depends_on` or `depended_on_by` on any touched skill
+- `confidence`, `review_required`, `version`, or `last_updated` on any
+  touched skill (these appear in the Skills-by-feature blocks)
+- A skill was added or removed
+
+If none of the above changed (e.g., the update only edited prose in
+`## Data Flow`), the catalog does not need regeneration. Note "catalog
+unchanged" in the audit log.
+
+### How to regenerate
+
+Apply the same rules as `skill-generator` Step 6.5:
+
+1. Walk every `.github/skills/<feature-id>/SKILL.md`.
+2. Rebuild the Quick lookup table from `aliases` + `business_terms` of all
+   skills (not just the ones edited in this run — the catalog is repo-wide).
+3. Rebuild the Skills-by-feature blocks alphabetically by `skill_id`.
+4. Update the catalog metadata footer with the new datetime and skill count.
+5. Preserve the "How AI assistants should use this catalog" and "How
+   developers should update this catalog" sections verbatim from
+   `docs/templates/catalog.md`.
+
+### Sanity checks before Halt Gate 2
+
+1. Every `skill_id` in the catalog corresponds to an existing
+   `.github/skills/<skill_id>/SKILL.md`.
+2. Every linked path resolves.
+3. Every skill on disk appears in Skills-by-feature (no missing entries).
+
+Fail closed: if any check fails, surface the inconsistency to the developer
+and stop. Do not commit a catalog that disagrees with the skills on disk.
 
 ---
 
@@ -308,6 +368,10 @@ Validation:
 | Skill | validate.py | citation_check.py |
 |-------|-------------|-------------------|
 | participant | PASS | PASS |
+
+Catalog: regenerated | unchanged
+- Trigger: <what changed that required regeneration, or "no discovery-metadata change">
+- Sanity check: PASS | FAIL
 ```
 
 ---
@@ -325,6 +389,8 @@ Updated N skills:
 
 Dependency graph changes:
 - invoice-compare depends_on participant - kept and revalidated
+
+Catalog: regenerated (aliases on participant changed) | unchanged
 
 Audit log updated: .github/skills/.skill-update-audit.md
 
