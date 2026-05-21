@@ -13,3 +13,10 @@ venv/
 # used for ad-hoc generator runs, including their own .git/ trees and binaries.
 documents/
 documents/**
+
+# Internal enterprise rollout analyses — kept locally for reference,
+# not part of the published product.
+docs/enterprise-rollout-25k-analysis-claude.md
+docs/enterprise-rollout-25k-analysis-codex.md
+docs/enterprise-rollout-25k-analysis-synthesis.md
+docs/enterprise-rollout-25k-faang-roadmap.md
