@@ -38,6 +38,10 @@ export SKILL_GENERATOR_HOME=/path/to/Skill_Generator
 The generator and updater call `$SKILL_GENERATOR_HOME/lib/validate.py` and
 `$SKILL_GENERATOR_HOME/lib/citation_check.py` from inside the target Java repo.
 
+For a step-by-step install and usage guide for VS Code, IntelliJ, Copilot,
+Claude, Codex, first-run generation, tracker runs, and PR policy, see
+[docs/developer-installation-and-usage-guide.md](docs/developer-installation-and-usage-guide.md).
+
 ---
 
 ## Repository layout
