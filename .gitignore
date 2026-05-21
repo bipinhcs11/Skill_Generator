@@ -8,3 +8,8 @@ build/
 .venv/
 venv/
 .env
+
+# Local test workspaces — never commit; these are clones of target repos
+# used for ad-hoc generator runs, including their own .git/ trees and binaries.
+documents/
+documents/**
